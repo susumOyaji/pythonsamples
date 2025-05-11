@@ -1,50 +1,61 @@
+from flask import Flask, render_template, request, jsonify
 import yfinance as yf
-import pandas as pd
-import matplotlib.pyplot as plt
 import time
+import json
 
-ticker_symbols = ['3930.T', '7203.T', '6758.T']  # 例：HATENA (3930.T), トヨタ (7203.T), ソニー (6758.T)
-tickers = [yf.Ticker(symbol) for symbol in ticker_symbols]
-price_histories = {symbol: [] for symbol in ticker_symbols}
-time_history = []
+app = Flask(__name__)
 
-plt.ion()  # Turn on interactive mode
+def get_realtime_price_with_change(ticker_symbol):
+    """指定されたティッカーシンボルの最新株価と前日比を取得します。"""
+    try:
+        ticker = yf.Ticker(ticker_symbol)
+        data = ticker.info
+        if 'currentPrice' in data and 'regularMarketChange' in data and 'regularMarketChangePercent' in data and 'regularMarketTime' in data:
+            price = data['currentPrice']
+            timestamp = data['regularMarketTime']
+            change = data['regularMarketChange']
+            change_percent = data['regularMarketChangePercent']
+            return price, timestamp, change, change_percent
+        else:
+            return None, None, None, None
+    except Exception as e:
+        print(f"Error fetching data for {ticker_symbol}: {e}")
+        return None, None, None, None
 
-fig, ax = plt.subplots()
-lines = {}
-for symbol in ticker_symbols:
-    line, = ax.plot([], [], label=symbol)
-    lines[symbol] = line
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    stock_list = []
+    if request.method == 'POST':
+        try:
+            local_storage_data = request.form.get('stock_data')
+            if local_storage_data:
+                stocks = json.loads(local_storage_data)
+                for stock in stocks:
+                    ticker = stock.get('ticker')
+                    shares = stock.get('shares')
+                    purchase_price = stock.get('purchase_price')
+                    if ticker:
+                        price, timestamp, change, change_percent = get_realtime_price_with_change(f"{ticker}.T")
+                        formatted_timestamp = time.strftime('%Y-%m-%d %H:%M:%S') if timestamp else "取得できませんでした"
+                        stock_info = {
+                            'ticker': ticker,
+                            'price': f"{price:.2f}" if price is not None else "取得できませんでした",
+                            'timestamp': formatted_timestamp,
+                            'change': f"{change:.2f}" if change is not None else "取得できませんでした",
+                            'change_percent': f"{change_percent:.2f}" if change_percent is not None else "取得できませんでした",
+                            'shares': shares,
+                            'purchase_price': purchase_price
+                        }
+                        stock_list.append(stock_info)
+            return jsonify({'stocks': stock_list})
+        except json.JSONDecodeError:
+            error_message = "ローカルストレージデータの形式が正しくありません。"
+            return render_template('index.html', error=error_message)
+        except Exception as e:
+            error_message = f"データの処理中にエラーが発生しました: {e}"
+            return render_template('index.html', error=error_message)
 
-ax.set_xlabel('Time')
-ax.set_ylabel('Price (JPY)')
-ax.set_title('Real-time Stock Prices')
-ax.legend()
-plt.grid(True)
-
-def update_plot():
-    current_time = pd.Timestamp.now()
-    time_history.append(current_time)
-    for symbol, ticker in zip(ticker_symbols, tickers):
-        info = ticker.info
-        if 'currentPrice' in info:
-            current_price = info['currentPrice']
-            price_histories[symbol].append(current_price)
-            lines[symbol].set_xdata(time_history)
-            lines[symbol].set_ydata(price_histories[symbol])
-    ax.relim()
-    ax.autoscale_view()
-    fig.canvas.draw()
-    fig.canvas.flush_events()
+    return render_template('index.html', stocks=stock_list)
 
 if __name__ == '__main__':
-    print("リアルタイム株価グラフを表示します。ウィンドウを閉じると終了します。")
-    try:
-        while True:
-            update_plot()
-            time.sleep(5)  # 5秒ごとに更新
-    except KeyboardInterrupt:
-        print("停止しました。")
-    finally:
-        plt.ioff()
-        plt.show()
+    app.run(debug=True)
