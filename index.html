@@ -2,168 +2,209 @@
 <html lang="ja">
 
 <head>
-  <meta charset="UTF-8">
-  <title>株価ダッシュボード</title>
-  <style>
-    .card {
-      border: 1px solid #aaa;
-      padding: 10px;
-      margin: 10px;
-      display: inline-block;
-      width: 200px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>株価ダッシュボード</title>
+    <style>
+        .card {
+            border: 1px solid #aaa;
+            padding: 10px;
+            margin: 10px;
+            display: inline-block;
+            width: 250px; /* 少し広めに */
+            vertical-align: top; /* カードの垂直方向の配置を揃える */
+        }
+        .edit-form {
+            margin-top: 10px;
+        }
+        .success-message {
+            color: green;
+            margin-top: 5px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 5px;
+        }
+    </style>
 </head>
 
 <body>
-  <h1>株価ダッシュボード</h1>
+    <h1>Stock Price Dashboard</h1>
+    <h2>Market Information</h2>
+    <div id="market-container"></div>
 
-  <!-- 登録フォーム -->
-  <div style="margin-top: 10px;">
-    <h2>株式の追加登録</h2>
-    <form id="add-form" onsubmit="return submitForm();">
-      <input type="text" id="symbol" placeholder="企業コード (例: 6758.T)" required />
-      <input type="number" id="shares" placeholder="株数" min="1" required />
-      <input type="number" id="unit_price" placeholder="購入単価" step="0.01" min="0" required />
-      <button type="submit">登録</button>
-    </form>
-    <div id="form-status" style="color: red; margin-top: 5px;"></div>
-  </div>
+    <div style="margin-top: 10px;">
+        <h2>Additional registration</h2>
+        <form id="add-form" onsubmit="return submitForm();">
+            <input type="text" id="symbol" placeholder="企業コード (例: 7203.T)" required />
+            <input type="number" id="shares" placeholder="株数" min="1" required />
+            <input type="number" id="unit_price" placeholder="購入単価" step="0.01" min="0" required />
+            <button type="submit">登録</button>
+        </form>
+        <div id="form-status" class="error-message"></div>
+        <p style="font-size: small;">ヒント: 企業コードは例のように証券コードと市場を示すサフィックス（例: .T は東証）を含めてください。</p>
+    </div>
 
-  <h2>マーケット情報</h2>
-  <div id="market-container"></div>
+   
 
-  <h2>登録銘柄（損益計算付き）</h2>
-  <div id="custom-container"></div>
+    <h3>Registered Stocks</h3>
+    <div id="custom-container"></div>
+    <div id="update-status" class="success-message"></div>
 
-  <script>
-    let intervalId = null;
+    <script>
+        let intervalId = null;
 
-    async function fetchMarket() {
-      try {
-        const res = await fetch('/api/market');
-        const data = await res.json();
-        renderData(data);
-      } catch (err) {
-        document.getElementById('market-container').innerHTML = 'データ取得に失敗しました';
-      }
-    }
-
-    function renderData(data) {
-      const marketContainer = document.getElementById('market-container');
-      const customContainer = document.getElementById('custom-container');
-      marketContainer.innerHTML = '';
-      customContainer.innerHTML = '';
-
-      for (const key in data) {
-        const item = data[key];
-        const card = document.createElement('div');
-        card.className = 'card';
-
-        let html = `<strong>${item.name}</strong><br>現在値: ${item.price ?? "取得失敗"}`;
-
-        if (item.previous_close !== undefined && item.price_diff !== undefined) {
-          html += `<br>前日終値: ${item.previous_close}<br>前日比: ${item.price_diff.toFixed(2)}`;
+        async function fetchMarket() {
+            try {
+                const res = await fetch('/api/market');
+                const data = await res.json();
+                renderData(data);
+            } catch (err) {
+                document.getElementById('market-container').innerHTML = '<div class="error-message">データ取得に失敗しました</div>';
+            }
         }
 
-        if (item.shares !== undefined) {
-          html += `
-        <br>株数: <span class="shares">${item.shares}</span>
-        <br>購入単価: <span class="unit_price">${item.unit_price}</span>
-        <br>損益: ${item.profit?.toFixed(2) ?? "計算不可"}
-        <br><button onclick="editCard('${item.name}', '${key.replace('custom_', '')}', ${item.shares}, ${item.unit_price})">編集</button>
-        <div class="edit-form" style="display:none; margin-top: 10px;">
-          株数: <input type="number" class="edit-shares" value="${item.shares}" min="1"><br>
-          購入単価: <input type="number" class="edit-unit-price" value="${item.unit_price}" step="0.01" min="0"><br>
-          <button onclick="saveEdit('${key.replace('custom_', '')}', this)">保存</button>
-        </div>`;
-          customContainer.appendChild(card);
+        function renderData(data) {
+            const marketContainer = document.getElementById('market-container');
+            const customContainer = document.getElementById('custom-container');
+            marketContainer.innerHTML = '';
+            customContainer.innerHTML = '';
 
-        } else {
-          marketContainer.appendChild(card);
+            for (const key in data) {
+                const item = data[key];
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                let html = `<strong>${item.name}</strong><br>現在値: ${item.price ?? "<span class='error-message'>取得失敗</span>"}`;
+
+                if (item.previous_close !== undefined && item.price_diff !== undefined) {
+                    html += `<br>前日終値: ${item.previous_close}<br>前日比: ${item.price_diff !== null ? item.price_diff.toFixed(2) : "<span class='error-message'>-</span>"}`;
+                }
+
+                if (item.shares !== undefined) {
+                    html += `
+                <br>株数: <span class="shares">${item.shares}</span>
+                <br>購入単価: <span class="unit_price">${item.unit_price}</span>
+                <br>損益: ${item.profit !== null ? item.profit.toFixed(2) : "<span class='error-message'>計算不可</span>"}`;
+                    if (item.error) {
+                        html += `<br><span class="error-message">${item.error}</span>`;
+                    }
+                    const originalSymbol = key.replace('custom_', '');
+                    html += `<br><button onclick="editCard('${item.name}', '${originalSymbol}', ${item.shares}, ${item.unit_price})">編集</button>
+                <div class="edit-form" style="display:none; margin-top: 10px;">
+                    企業コード: <input type="text" class="edit-symbol" value="${originalSymbol}"><br>
+                    株数: <input type="number" class="edit-shares" value="${item.shares}" min="1"><br>
+                    購入単価: <input type="number" class="edit-unit-price" value="${item.unit_price}" step="0.01" min="0"><br>
+                    <button onclick="saveEdit('${originalSymbol}', this)">保存</button>
+                </div>`;
+                    customContainer.appendChild(card);
+
+                } else {
+                    if (item.error) {
+                        html += `<br><span class="error-message">${item.error}</span>`;
+                    }
+                    marketContainer.appendChild(card);
+                }
+
+                card.innerHTML = html;
+            }
         }
 
-        card.innerHTML = html;
-      }
-    }
+        async function submitForm() {
+            const symbol = document.getElementById('symbol').value.trim();
+            const shares = document.getElementById('shares').value;
+            const unit_price = document.getElementById('unit_price').value;
+            const formStatus = document.getElementById('form-status');
+            formStatus.textContent = ""; // Clear previous message
 
-    async function submitForm() {
-      const symbol = document.getElementById('symbol').value.trim();
-      const shares = document.getElementById('shares').value;
-      const unit_price = document.getElementById('unit_price').value;
+            const res = await fetch('/api/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol, shares, unit_price })
+            });
 
-      const res = await fetch('/api/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, shares, unit_price })
-      });
+            if (res.ok) {
+                formStatus.className = "success-message";
+                formStatus.textContent = "登録しました。";
+                document.getElementById('add-form').reset();
+                fetchMarket();
+            } else {
+                const err = await res.json();
+                formStatus.className = "error-message";
+                formStatus.textContent = "エラー: " + err.error;
+            }
+            return false;
+        }
 
-      const status = document.getElementById('form-status');
-      if (res.ok) {
-        status.textContent = "登録しました。";
-        document.getElementById('add-form').reset();
+        function editCard(name, symbol, shares, unit_price) {
+            const cards = document.querySelectorAll('.card');
+            for (const card of cards) {
+                if (card.innerHTML.includes(name)) {
+                    const form = card.querySelector('.edit-form');
+                    const isVisible = form.style.display === 'block';
+                    form.style.display = isVisible ? 'none' : 'block';
+                    const symbolInput = form.querySelector('.edit-symbol');
+                    const sharesInput = form.querySelector('.edit-shares');
+                    if (!isVisible) {
+                        symbolInput.focus(); // 編集時に企業コード入力にフォーカス
+                        stopAutoRefresh();   // 編集開始で自動更新を停止
+                    } else {
+                        startAutoRefresh();  // フォームを閉じる際に自動更新を再開
+                    }
+                    break; // 同じ名前のカードは一つのはずなので、見つかったらループを抜ける
+                }
+            }
+        }
+
+
+        async function saveEdit(originalSymbol, btn) {
+            const card = btn.closest('.card');
+            const newSymbol = card.querySelector('.edit-symbol').value.trim();
+            const shares = card.querySelector('.edit-shares').value;
+            const unit_price = card.querySelector('.edit-unit-price').value;
+            const updateStatus = document.getElementById('update-status');
+            updateStatus.textContent = ""; // Clear previous message
+            updateStatus.className = "success-message"; // デフォルトを成功メッセージクラスに
+
+            const res = await fetch('/api/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ symbol: newSymbol, shares, unit_price, originalSymbol: originalSymbol }) // 新しいシンボルと元のシンボルを送信
+            });
+
+            if (res.ok) {
+                updateStatus.textContent = "更新しました。";
+                fetchMarket();
+                startAutoRefresh(); // 保存後に自動更新を再開
+                setTimeout(() => updateStatus.textContent = "", 3000); // 3秒後にメッセージを消す
+                const editForm = card.querySelector('.edit-form');
+                if (editForm) {
+                    editForm.style.display = 'none'; // 編集フォームを閉じる
+                }
+            } else {
+                const err = await res.json();
+                updateStatus.className = "error-message";
+                updateStatus.textContent = "更新エラー: " + err.error;
+            }
+        }
+
+
+        function startAutoRefresh() {
+            if (!intervalId) {
+                intervalId = setInterval(fetchMarket, 10000);
+            }
+        }
+
+        function stopAutoRefresh() {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+
+
         fetchMarket();
-      } else {
-        const err = await res.json();
-        status.textContent = "エラー: " + err.error;
-      }
-      return false;
-    }
-
-    function editCard(name, symbol, shares, unit_price) {
-      const cards = document.querySelectorAll('.card');
-      for (const card of cards) {
-        if (card.innerHTML.includes(name)) {
-          const form = card.querySelector('.edit-form');
-          const isVisible = form.style.display === 'block';
-          form.style.display = isVisible ? 'none' : 'block';
-          if (!isVisible) {
-            stopAutoRefresh();  // 編集開始で停止
-          }
-        }
-      }
-    }
-
-
-    async function saveEdit(symbol, btn) {
-      const card = btn.closest('.card');
-      const shares = card.querySelector('.edit-shares').value;
-      const unit_price = card.querySelector('.edit-unit-price').value;
-
-      const res = await fetch('/api/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, shares, unit_price })
-      });
-
-      if (res.ok) {
-        fetchMarket();
-        startAutoRefresh();  // 保存後に再開
-      } else {
-        const err = await res.json();
-        alert("更新エラー: " + err.error);
-      }
-    }
-
-
-    function startAutoRefresh() {
-      if (!intervalId) {
-        intervalId = setInterval(fetchMarket, 10000);
-      }
-    }
-
-    function stopAutoRefresh() {
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    }
-
-
-    fetchMarket();
-    //setInterval(fetchMarket, 10000);
-    startAutoRefresh();
-  </script>
+        startAutoRefresh();
+    </script>
 </body>
 
 </html>

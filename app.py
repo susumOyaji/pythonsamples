@@ -2,8 +2,8 @@ from flask import Flask, jsonify, render_template, request
 import yfinance as yf
 import json
 import os
+import re  # 正規表現用モジュールを追加
 
-#app = Flask(__name__)
 app = Flask(__name__, template_folder='.')
 
 DATA_FILE = "data.json"
@@ -12,7 +12,10 @@ DATA_FILE = "data.json"
 def load_custom_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []  # ファイルが空または不正なJSONの場合は空のリストを返す
     return []
 
 # JSONファイルへ登録データを保存
@@ -31,24 +34,23 @@ def get_market_data():
         "usd_jpy": yf.Ticker("USDJPY=X"),
         "dow": yf.Ticker("^DJI"),
         "nikkei": yf.Ticker("^N225"),
-        
     }
 
     for key, ticker in tickers.items():
-        info = ticker.info
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        prev_close = info.get("regularMarketPreviousClose")
         try:
+            info = ticker.info
+            price = info.get("currentPrice") or info.get("regularMarketPrice")
+            prev_close = info.get("regularMarketPreviousClose")
             price_diff = price - prev_close if price and prev_close else None
-        except:
-            price_diff = None
-
-        data[key] = {
-            "price": price,
-            "name": info.get("shortName", key),
-            "previous_close": prev_close,
-            "price_diff": price_diff,
-        }
+            data[key] = {
+                "price": price,
+                "name": info.get("shortName", key),
+                "previous_close": prev_close,
+                "price_diff": price_diff,
+            }
+        except Exception as e:
+            print(f"Error fetching data for {key}: {e}")
+            data[key] = {"price": None, "name": key, "previous_close": None, "price_diff": None, "error": "データ取得エラー"}
 
     # カスタム登録データを読み込み、損益計算
     custom_entries = load_custom_data()
@@ -62,14 +64,22 @@ def get_market_data():
             current_price = info.get("currentPrice") or info.get("regularMarketPrice")
             profit = (current_price - unit_price) * shares if current_price else None
             data[f"custom_{symbol}"] = {
-                "name": info.get("shortName", symbol),
+                "name": info.get("shortName", symbol) or symbol,
                 "price": current_price,
                 "shares": shares,
                 "unit_price": unit_price,
-                "profit": profit
+                "profit": profit,
             }
-        except:
-            continue
+        except Exception as e:
+            print(f"Error fetching data for custom symbol {symbol}: {e}")
+            data[f"custom_{symbol}"] = {
+                "name": symbol,
+                "price": None,
+                "shares": shares,
+                "unit_price": unit_price,
+                "profit": None,
+                "error": "株価取得エラー"
+            }
 
     return jsonify(data)
 
@@ -80,9 +90,20 @@ def add_stock_entry():
         symbol = body["symbol"].strip()
         shares = int(body["shares"])
         unit_price = float(body["unit_price"])
-        assert symbol and shares > 0 and unit_price > 0
-    except:
-        return jsonify({"error": "入力が不正です"}), 400
+
+        if not symbol:
+            return jsonify({"error": "企業コードを入力してください"}), 400
+        if not re.match(r"^[a-zA-Z0-9\.\-]+$", symbol): # 簡単なシンボルフォーマットチェック
+            return jsonify({"error": "企業コードの形式が正しくありません"}), 400
+        if shares <= 0:
+            return jsonify({"error": "株数は1以上の整数を入力してください"}), 400
+        if unit_price <= 0:
+            return jsonify({"error": "購入単価は0より大きい数値を入力してください"}), 400
+
+    except (ValueError, TypeError):
+        return jsonify({"error": "入力値が不正です"}), 400
+    except KeyError:
+        return jsonify({"error": "必要なパラメータが不足しています"}), 400
 
     new_entry = {"symbol": symbol, "shares": shares, "unit_price": unit_price}
     data = load_custom_data()
@@ -98,21 +119,37 @@ def update_stock_entry():
         symbol = body["symbol"].strip()
         shares = int(body["shares"])
         unit_price = float(body["unit_price"])
-        assert symbol and shares > 0 and unit_price > 0
-    except:
-        return jsonify({"error": "入力が不正です"}), 400
+        original_symbol = body.get("originalSymbol") # 元のシンボルを取得
+
+        if not symbol:
+            return jsonify({"error": "企業コードを入力してください"}), 400
+        if not re.match(r"^[a-zA-Z0-9\.\-]+$", symbol): # 簡単なシンボルフォーマットチェック
+            return jsonify({"error": "企業コードの形式が正しくありません"}), 400
+        if shares <= 0:
+            return jsonify({"error": "株数は1以上の整数を入力してください"}), 400
+        if unit_price <= 0:
+            return jsonify({"error": "購入単価は0より大きい数値を入力してください"}), 400
+        if not original_symbol:
+            return jsonify({"error": "更新に必要な情報が不足しています"}), 400
+
+    except (ValueError, TypeError):
+        return jsonify({"error": "入力値が不正です"}), 400
+    except KeyError:
+        return jsonify({"error": "必要なパラメータが不足しています"}), 400
 
     data = load_custom_data()
-    found = False
-    for entry in data:
-        if entry["symbol"] == symbol:
-            entry["shares"] = shares
-            entry["unit_price"] = unit_price
-            found = True
+    found_index = -1
+    for i, entry in enumerate(data):
+        if entry["symbol"] == original_symbol:
+            found_index = i
             break
 
-    if not found:
+    if found_index == -1:
         return jsonify({"error": "対象の銘柄が見つかりません"}), 404
+
+    data[found_index]["symbol"] = symbol
+    data[found_index]["shares"] = shares
+    data[found_index]["unit_price"] = unit_price
 
     save_custom_data(data)
     return jsonify({"message": "更新しました"})
