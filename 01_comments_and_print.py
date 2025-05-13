@@ -3,7 +3,7 @@
 # Linha comentada
 # Linhas comentadas não são interpretadas
 
-print "Comentários não são interpretados"
+print ("Comentários não são interpretados")
 
 # Comentários podem ser utilizados para habilitar ou desabilitar trechos de código
 
