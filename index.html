@@ -28,12 +28,10 @@
 </head>
 
 <body>
-    <h1>Stock Price Dashboard</h1>
-    <h2>Market Information</h2>
-    <div id="market-container"></div>
+    <h1>株価ダッシュボード</h1>
 
     <div style="margin-top: 10px;">
-        <h2>Additional registration</h2>
+        <h2>株式の追加登録</h2>
         <form id="add-form" onsubmit="return submitForm();">
             <input type="text" id="symbol" placeholder="企業コード (例: 7203.T)" required />
             <input type="number" id="shares" placeholder="株数" min="1" required />
@@ -44,9 +42,10 @@
         <p style="font-size: small;">ヒント: 企業コードは例のように証券コードと市場を示すサフィックス（例: .T は東証）を含めてください。</p>
     </div>
 
-   
+    <h2>マーケット情報</h2>
+    <div id="market-container"></div>
 
-    <h3>Registered Stocks</h3>
+    <h2>登録銘柄（損益計算付き）</h2>
     <div id="custom-container"></div>
     <div id="update-status" class="success-message"></div>
 
@@ -89,9 +88,9 @@
                         html += `<br><span class="error-message">${item.error}</span>`;
                     }
                     const originalSymbol = key.replace('custom_', '');
-                    html += `<br><button onclick="editCard('${item.name}', '${originalSymbol}', ${item.shares}, ${item.unit_price})">編集</button>
+                    html += `<br><button class="edit-button" onclick="editCard(this, '${item.name}', '${originalSymbol}', ${item.shares}, ${item.unit_price})">編集</button>
                 <div class="edit-form" style="display:none; margin-top: 10px;">
-                    企業コード: <input type="text" class="edit-symbol" value="${originalSymbol}"><br>
+                    コード: <input type="text" class="edit-symbol" value="${originalSymbol}"><br>
                     株数: <input type="number" class="edit-shares" value="${item.shares}" min="1"><br>
                     購入単価: <input type="number" class="edit-unit-price" value="${item.unit_price}" step="0.01" min="0"><br>
                     <button onclick="saveEdit('${originalSymbol}', this)">保存</button>
@@ -135,23 +134,21 @@
             return false;
         }
 
-        function editCard(name, symbol, shares, unit_price) {
-            const cards = document.querySelectorAll('.card');
-            for (const card of cards) {
-                if (card.innerHTML.includes(name)) {
-                    const form = card.querySelector('.edit-form');
-                    const isVisible = form.style.display === 'block';
-                    form.style.display = isVisible ? 'none' : 'block';
-                    const symbolInput = form.querySelector('.edit-symbol');
-                    const sharesInput = form.querySelector('.edit-shares');
-                    if (!isVisible) {
-                        symbolInput.focus(); // 編集時に企業コード入力にフォーカス
-                        stopAutoRefresh();   // 編集開始で自動更新を停止
-                    } else {
-                        startAutoRefresh();  // フォームを閉じる際に自動更新を再開
-                    }
-                    break; // 同じ名前のカードは一つのはずなので、見つかったらループを抜ける
-                }
+        function editCard(button, name, symbol, shares, unit_price) {
+            const card = button.closest('.card');
+            const form = card.querySelector('.edit-form');
+            const isVisible = form.style.display === 'block';
+            form.style.display = isVisible ? 'none' : 'block';
+            const symbolInput = form.querySelector('.edit-symbol');
+            const sharesInput = form.querySelector('.edit-shares');
+
+            if (!isVisible) {
+                button.textContent = 'キャンセル'; // ボタン名をキャンセルに変更
+                symbolInput.focus(); // 編集時に企業コード入力にフォーカス
+                stopAutoRefresh();   // 編集開始で自動更新を停止
+            } else {
+                button.textContent = '編集';     // ボタン名を編集に戻す
+                startAutoRefresh();  // フォームを閉じる際に自動更新を再開
             }
         }
 
@@ -179,6 +176,11 @@
                 const editForm = card.querySelector('.edit-form');
                 if (editForm) {
                     editForm.style.display = 'none'; // 編集フォームを閉じる
+                    // 保存後にボタン名を「編集」に戻す (該当するボタンを探して変更)
+                    const editButton = card.querySelector('.edit-button');
+                    if (editButton) {
+                        editButton.textContent = '編集';
+                    }
                 }
             } else {
                 const err = await res.json();
